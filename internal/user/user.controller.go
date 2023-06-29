@@ -19,33 +19,7 @@ import(
 
 var userCollection *mongo.Collection = database.GetCollection(database.DB, "user")
 
-func GetSingleUser() gin.HandlerFunc{
-	return func(c *gin.Context){
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 10 * time.Second)
-		defer cancel()
 
-		userID := c.Param("uid")
-		id, err := primitive.ObjectIDFromHex(userID)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
-			return
-		}
-
-		var user User  
-
-		err = userCollection.FindOne(ctx, bson.M{"_id": id}).Decode(&user)
-		if err != nil {
-			if err == mongo.ErrNoDocuments {
-				c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"message": user})
-	}
-}
 
 
 func GetAllUsers() gin.HandlerFunc{
@@ -156,6 +130,10 @@ func CreateUser() gin.HandlerFunc {
 			return
 		}
 
+		// hash password
+		hashedPassword, _ := HashPassword(*newUser.Password)
+		newUser.Password = &hashedPassword
+
 		result, err := userCollection.InsertOne(ctx, newUser)
 		if err != nil{
 			c.JSON(http.StatusInternalServerError, err)
@@ -166,26 +144,58 @@ func CreateUser() gin.HandlerFunc {
 	}
 }
 
+func LoginUser() gin.HandlerFunc {
+	return func(c *gin.Context){
+		var user User
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+		defer cancel()
 
-func checkExists(email *string) (bool, error){
-	ctx, cancel := context.WithTimeout(context.Background(), 10 * time.Second)
-	defer cancel()
+		if err := c.ShouldBindJSON(&user); err != nil{
+			c.JSON(http.StatusBadRequest, gin.H{"msg": err.Error()})
+			return
+		}
 
-	count, err := userCollection.CountDocuments(ctx, bson.M{"email": *email}, nil)
-	if err != nil {
-		return false, err
+		err := userCollection.FindOne(ctx, bson.M{"email": user.Email}).Decode(&user)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+			}
+			return
+		}
+
+		c.JSON(200, user)
 	}
-
-	if count > 0 {
-		// User exists
-		return true, nil
-	}
-
-	// User does not exist
-	return false, nil
 }
 
+func GetSingleUser() gin.HandlerFunc{
+	return func(c *gin.Context){
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 10 * time.Second)
+		defer cancel()
 
+		userID := c.Param("uid")
+		id, err := primitive.ObjectIDFromHex(userID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+			return
+		}
+
+		var user User  
+
+		err = userCollection.FindOne(ctx, bson.M{"_id": id}).Decode(&user)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": user})
+	}
+}
 
 
 func UpdateSingleUser() gin.HandlerFunc{
