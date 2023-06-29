@@ -34,7 +34,6 @@ func main(){
 
 	// MongoDB connection
 	client := database.SetupMongoDB()
-
 	defer client.Disconnect(context.Background())  // close the DB connection
 
 
